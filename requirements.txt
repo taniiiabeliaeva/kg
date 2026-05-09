@@ -1,0 +1,13 @@
+requests
+networkx
+neo4j
+pandas
+tqdm
+sentence-transformers
+graphdatascience
+torch
+torch-geometric
+matplotlib
+pyvis
+pykeen
+python-dotenv
