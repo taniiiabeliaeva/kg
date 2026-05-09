@@ -9,5 +9,4 @@ torch
 torch-geometric
 matplotlib
 pyvis
-pykeen
 python-dotenv

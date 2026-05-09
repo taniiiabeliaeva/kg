@@ -1,0 +1,20 @@
+{
+  "TU Wien": {
+    "internal_citations": 162,
+    "external_citations": 41367,
+    "total_citations": 41529,
+    "bubble_score": 0.0039
+  },
+  "ETH Zurich": {
+    "internal_citations": 161,
+    "external_citations": 39072,
+    "total_citations": 39233,
+    "bubble_score": 0.0041
+  },
+  "TU Berlin": {
+    "internal_citations": 346,
+    "external_citations": 46255,
+    "total_citations": 46601,
+    "bubble_score": 0.0074
+  }
+}

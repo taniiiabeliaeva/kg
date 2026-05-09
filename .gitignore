@@ -7,5 +7,5 @@ output/works_cache.json
 output/kge/
 *.png
 *.html
-old/.DS_Store
+old/
 .DS_Store

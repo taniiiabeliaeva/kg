@@ -1,90 +1,158 @@
-# models/kge_training.py — trains a kge model on the exported triples
+# models/kge_training.py — TransE using plain torch, no pykeen
 
 import pandas as pd
+import torch
+import torch.nn as nn
+import json
 from pathlib import Path
 
 TRIPLES_PATH  = "output/triples.tsv"
 OUTPUT_DIR    = "output/kge"
-MODEL         = "TransE"   # options: "TransE", "ComplEx", "RotatE"
-EPOCHS        = 100
+EPOCHS        = 200
 EMBEDDING_DIM = 64
+LEARNING_RATE = 0.005
+BATCH_SIZE    = 256
+MARGIN        = 1.0
 TRAIN_RATIO   = 0.8
-VAL_RATIO     = 0.1
+NEG_SAMPLES   = 3
 
 
 def load_triples(path=TRIPLES_PATH):
     df = pd.read_csv(path, sep="\t")
     print(f"{len(df)} triples loaded")
-    print(df["relation"].value_counts().to_string())
+    df = df[df["relation"] == "CITES"].copy()
+    print(f"{len(df)} citation triples after filtering")
     return df
 
 
-def train(triples_df, model_name=MODEL, epochs=EPOCHS, dim=EMBEDDING_DIM):
-    try:
-        from pykeen.triples import TriplesFactory
-        from pykeen.pipeline import pipeline
-    except ImportError:
-        print("pykeen not installed — run: pip install pykeen torch")
-        return None
+def build_vocab(df):
+    entities    = pd.unique(df[["head", "tail"]].values.ravel())
+    relations   = df["relation"].unique()
+    entity2id   = {e: i for i, e in enumerate(entities)}
+    relation2id = {r: i for i, r in enumerate(relations)}
+    return entity2id, relation2id
+
+
+def encode(df, entity2id, relation2id):
+    h = torch.tensor([entity2id[x] for x in df["head"]], dtype=torch.long)
+    r = torch.tensor([relation2id[x] for x in df["relation"]], dtype=torch.long)
+    t = torch.tensor([entity2id[x] for x in df["tail"]], dtype=torch.long)
+    return h, r, t
+
+
+class TransE(nn.Module):
+    def __init__(self, n_entities, n_relations, dim):
+        super().__init__()
+        self.ent = nn.Embedding(n_entities, dim)
+        self.rel = nn.Embedding(n_relations, dim)
+        # initialise small — key for stable training
+        nn.init.uniform_(self.ent.weight, -0.1, 0.1)
+        nn.init.uniform_(self.rel.weight, -0.1, 0.1)
+
+    def score(self, h, r, t):
+        # normalise entity embeddings — standard TransE
+        h_e = nn.functional.normalize(self.ent(h), p=2, dim=1)
+        t_e = nn.functional.normalize(self.ent(t), p=2, dim=1)
+        r_e = self.rel(r)
+        return torch.norm(h_e + r_e - t_e, p=2, dim=1)
+
+
+def train(df):
+    entity2id, relation2id = build_vocab(df)
+    n_ent = len(entity2id)
+    n_rel = len(relation2id)
+
+    # shuffle before split
+    df_shuf  = df.sample(frac=1, random_state=42).reset_index(drop=True)
+    split    = int(len(df_shuf) * TRAIN_RATIO)
+    train_df = df_shuf.iloc[:split]
+    test_df  = df_shuf.iloc[split:]
+
+    h_tr, r_tr, t_tr = encode(train_df, entity2id, relation2id)
+    h_te, r_te, t_te = encode(test_df,  entity2id, relation2id)
+
+    model     = TransE(n_ent, n_rel, EMBEDDING_DIM)
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    loss_fn   = nn.MarginRankingLoss(margin=MARGIN)
+
+    print(f"\ntraining TransE — {n_ent} entities, {EPOCHS} epochs")
+    print(f"train: {len(train_df)}  test: {len(test_df)}\n")
+
+    for epoch in range(1, EPOCHS + 1):
+        model.train()
+        perm = torch.randperm(len(h_tr))
+        h_tr, r_tr, t_tr = h_tr[perm], r_tr[perm], t_tr[perm]
+        total_loss = 0
+
+        for i in range(0, len(h_tr), BATCH_SIZE):
+            bh = h_tr[i:i+BATCH_SIZE]
+            br = r_tr[i:i+BATCH_SIZE]
+            bt = t_tr[i:i+BATCH_SIZE]
+
+            bh_r  = bh.repeat_interleave(NEG_SAMPLES)
+            br_r  = br.repeat_interleave(NEG_SAMPLES)
+            bt_r  = bt.repeat_interleave(NEG_SAMPLES)
+            neg_t = torch.randint(0, n_ent, bt_r.shape)
+
+            pos_s = model.score(bh_r, br_r, bt_r)
+            neg_s = model.score(bh_r, br_r, neg_t)
+            loss  = loss_fn(pos_s, neg_s, -torch.ones(len(bh_r)))
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+
+        if epoch % 40 == 0:
+            print(f"  epoch {epoch:3d} / {EPOCHS}  loss: {total_loss:.4f}")
+
+    # eval on a sample — full eval over 30k entities is slow on cpu
+    model.eval()
+    sample = min(300, len(h_te))
+    hits1, hits10 = 0, 0
+    with torch.no_grad():
+        for i in range(sample):
+            h, r, t = h_te[i:i+1], r_te[i:i+1], t_te[i:i+1]
+            scores = model.score(h.expand(n_ent), r.expand(n_ent), torch.arange(n_ent))
+            rank = (scores < scores[t.item()]).sum().item() + 1
+            if rank <= 1:  hits1  += 1
+            if rank <= 10: hits10 += 1
+
+    print(f"\nhits@1  (sample {sample}): {hits1/sample:.4f}")
+    print(f"hits@10 (sample {sample}): {hits10/sample:.4f}")
+    print(f"(random baseline with {n_ent} entities ≈ {10/n_ent:.5f})")
 
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-
-    tf = TriplesFactory.from_labeled_triples(
-        triples_df[["head", "relation", "tail"]].values
-    )
-    train_tf, val_tf, test_tf = tf.split([TRAIN_RATIO, VAL_RATIO, 1 - TRAIN_RATIO - VAL_RATIO])
-
-    print(f"\ntraining {model_name} for {epochs} epochs...")
-    result = pipeline(
-        training=train_tf,
-        validation=val_tf,
-        testing=test_tf,
-        model=model_name,
-        model_kwargs={"embedding_dim": dim},
-        training_kwargs={"num_epochs": epochs, "batch_size": 256},
-        random_seed=42,
-        device="cpu",  # change to "cuda" if you have a gpu
-    )
-
-    result.save_to_directory(OUTPUT_DIR)
-    print(f"model saved to {OUTPUT_DIR}")
-
-    metrics = result.metric_results.to_df()
-    print(metrics[metrics["Side"] == "both"][["Metric", "Value"]].to_string(index=False))
-
-    return result
+    torch.save(model.state_dict(), f"{OUTPUT_DIR}/transe_model.pt")
+    with open(f"{OUTPUT_DIR}/entity2id.json", "w") as f:
+        json.dump(entity2id, f)
+    with open(f"{OUTPUT_DIR}/relation2id.json", "w") as f:
+        json.dump(relation2id, f)
+    print(f"\nmodel saved to {OUTPUT_DIR}/")
+    return model, entity2id, relation2id
 
 
-def predict_links(result, head_entity, relation="CITES", top_k=10):
-    # given a paper id, predict which papers it's most likely to cite next
-    if result is None:
+def predict_links(model, entity2id, relation2id, head_id, relation="CITES", top_k=10):
+    id2entity = {v: k for k, v in entity2id.items()}
+    if head_id not in entity2id:
+        print(f"{head_id} not found in vocabulary")
         return
-    try:
-        from pykeen.models.predict import get_tail_prediction_df
-        df = get_tail_prediction_df(
-            model=result.model,
-            head_label=head_entity,
-            relation_label=relation,
-            triples_factory=result.training,
-            add_novelties=True,
-        )
-        print(f"\ntop {top_k} predicted links for {head_entity}:")
-        print(df.head(top_k)[["tail_label", "score"]].to_string(index=False))
-        return df
-    except Exception as e:
-        print(f"prediction failed: {e}")
+    h = torch.tensor([entity2id[head_id]])
+    r = torch.tensor([relation2id[relation]])
+    n = len(entity2id)
+    model.eval()
+    with torch.no_grad():
+        scores = model.score(h.expand(n), r.expand(n), torch.arange(n))
+    top_idx = scores.argsort()[:top_k]
+    print(f"\ntop {top_k} predicted citations for {head_id}:")
+    for idx in top_idx:
+        print(f"  {id2entity[idx.item()]}  score: {scores[idx].item():.4f}")
 
 
 if __name__ == "__main__":
     df = load_triples()
+    model, entity2id, relation2id = train(df)
 
-    # train on citation edges only — more focused for bubble analysis
-    cites_df = df[df["relation"] == "CITES"].copy()
-
-    # swap to df if you want to train on the full graph
-    # cites_df = df
-
-    result = train(cites_df)
-
-    # uncomment and replace with a real paper id to test link prediction
-    # predict_links(result, "W2345678901")
+    # to test link prediction, grab a paper id from output/bubble_report.json
+    # and uncomment:
+    # predict_links(model, entity2id, relation2id, "W2345678901")

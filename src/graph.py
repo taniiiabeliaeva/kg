@@ -68,7 +68,7 @@ def load_works(driver, all_works):
                 # authors
                 for authorship in work.get("authorships", []):
                     author = authorship.get("author")
-                    if not author:
+                    if not author or not author.get("id"):
                         continue
                     aid = _short_id(author["id"])
                     s.run(

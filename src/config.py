@@ -28,4 +28,4 @@ YEAR_START = 2018
 YEAR_END   = 2023
 
 # keep small at first, increase once pipeline works
-MAX_WORKS_PER_INSTITUTION = 100
+MAX_WORKS_PER_INSTITUTION = 500

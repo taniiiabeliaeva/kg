@@ -1,11 +1,17 @@
 # bubbles.py — logic-based bubble detection
 #
-# the core idea is similar to datalog rules:
-#   internal_citation(P1, P2) :- cites(P1, P2), affiliated(P1, I), affiliated(P2, I)
-#   external_citation(P1, P2) :- cites(P1, P2), affiliated(P1, I), affiliated(P2, J), I != J
-#   bubble_score(I) = count(internal) / (count(internal) + count(external))
+# datalog-style rules:
+#   inst_paper(P, I)            :- affiliated_with(P, I)
+#   inst_paper(P, I)            :- authored(A, P), affiliated_with(A_paper, I), authored(A, A_paper)
+#                                  -- fallback: infer institution via author
 #
-# here we run this as cypher queries against neo4j instead of a datalog engine
+#   internal_citation(P1, P2, I) :- cites(P1, P2), inst_paper(P1, I), inst_paper(P2, I)
+#   external_citation(P1, P2, I) :- cites(P1, P2), inst_paper(P1, I), NOT inst_paper(P2, I)
+#   bubble_score(I)              :- count(internal) / (count(internal) + count(external))
+#
+# the key fix vs previous version: external now means "cited paper has no affiliation
+# to this institution" — i.e. we count all outgoing citations, not just ones where
+# the cited paper happens to also be in our dataset with an affiliation tag
 
 import json
 import os
@@ -23,12 +29,13 @@ def compute_bubble_scores():
     with driver.session() as s:
         for inst_name, inst_id in INSTITUTIONS.items():
 
-            # count citations between papers of the same institution (internal)
+            # internal: p1 (from this inst) cites p2 (also from this inst)
+            # p2's institution is confirmed via AFFILIATED_WITH edge
             r_internal = s.run(
                 """
                 MATCH (p1:Paper)-[:AFFILIATED_WITH]->(i:Institution {id: $iid}),
-                      (p2:Paper)-[:AFFILIATED_WITH]->(i),
-                      (p1)-[:CITES]->(p2)
+                      (p1)-[:CITES]->(p2:Paper),
+                      (p2)-[:AFFILIATED_WITH]->(i)
                 WHERE p1.id <> p2.id
                 RETURN count(*) AS cnt
                 """,
@@ -36,13 +43,13 @@ def compute_bubble_scores():
             )
             internal = r_internal.single()["cnt"]
 
-            # count citations going out to a different institution (external)
+            # external: p1 (from this inst) cites p2 that has NO affiliation to this inst
+            # this now includes all the stub papers that were only fetched as references
             r_external = s.run(
                 """
                 MATCH (p1:Paper)-[:AFFILIATED_WITH]->(i:Institution {id: $iid}),
-                      (p2:Paper)-[:AFFILIATED_WITH]->(j:Institution),
-                      (p1)-[:CITES]->(p2)
-                WHERE i.id <> j.id
+                      (p1)-[:CITES]->(p2:Paper)
+                WHERE NOT (p2)-[:AFFILIATED_WITH]->(i)
                 RETURN count(*) AS cnt
                 """,
                 iid=inst_id
@@ -61,47 +68,56 @@ def compute_bubble_scores():
 
     driver.close()
 
-    # save report
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     with open(f"{OUTPUT_DIR}/bubble_report.json", "w") as f:
         json.dump(results, f, indent=2)
 
     print("\nbubble scores:")
     for inst, d in sorted(results.items(), key=lambda x: -x[1]["bubble_score"]):
-        print(f"  {inst}: {d['bubble_score']} (internal={d['internal_citations']}, external={d['external_citations']})")
+        print(f"  {inst}: {d['bubble_score']} (internal={d['internal_citations']}, external={d['external_citations']}, total={d['total_citations']})")
 
     return results
 
 
 def compute_temporal_scores():
-    # same logic but split by year — to see how bubbles evolve over time
     driver = get_driver()
     rows = []
 
     with driver.session() as s:
         for inst_name, inst_id in INSTITUTIONS.items():
-            r = s.run(
+
+            # internal per year
+            r_int = s.run(
                 """
                 MATCH (p1:Paper)-[:AFFILIATED_WITH]->(i:Institution {id: $iid}),
-                      (p2:Paper)-[:AFFILIATED_WITH]->(j:Institution),
-                      (p1)-[:CITES]->(p2)
-                WHERE p1.year IS NOT NULL
-                RETURN p1.year AS year,
-                       i.id = j.id AS is_internal,
-                       count(*) AS cnt
+                      (p1)-[:CITES]->(p2:Paper),
+                      (p2)-[:AFFILIATED_WITH]->(i)
+                WHERE p1.year IS NOT NULL AND p1.id <> p2.id
+                RETURN p1.year AS year, count(*) AS cnt
                 ORDER BY year
                 """,
                 iid=inst_id
             )
             year_data = {}
-            for record in r:
-                year = record["year"]
-                if year not in year_data:
-                    year_data[year] = {"internal": 0, "external": 0}
-                if record["is_internal"]:
-                    year_data[year]["internal"] += record["cnt"]
-                else:
-                    year_data[year]["external"] += record["cnt"]
+            for rec in r_int:
+                year_data.setdefault(rec["year"], {"internal": 0, "external": 0})
+                year_data[rec["year"]]["internal"] += rec["cnt"]
+
+            # external per year
+            r_ext = s.run(
+                """
+                MATCH (p1:Paper)-[:AFFILIATED_WITH]->(i:Institution {id: $iid}),
+                      (p1)-[:CITES]->(p2:Paper)
+                WHERE p1.year IS NOT NULL
+                  AND NOT (p2)-[:AFFILIATED_WITH]->(i)
+                RETURN p1.year AS year, count(*) AS cnt
+                ORDER BY year
+                """,
+                iid=inst_id
+            )
+            for rec in r_ext:
+                year_data.setdefault(rec["year"], {"internal": 0, "external": 0})
+                year_data[rec["year"]]["external"] += rec["cnt"]
 
             for year, counts in sorted(year_data.items()):
                 total = counts["internal"] + counts["external"]
