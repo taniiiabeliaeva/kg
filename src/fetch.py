@@ -10,7 +10,6 @@ CACHE_PATH = "data/works_cache.json"
 
 
 def _get(url, params=None):
-    # basic wrapper — adds api key and a small delay to be polite
     if params is None:
         params = {}
     if OPENALEX_API_KEY:
@@ -32,7 +31,8 @@ def fetch_works_for_institution(inst_id, concept_id, year_start, year_end, max_w
     params = {
         "filter": filter_str,
         "select": "id,title,publication_year,authorships,concepts,referenced_works",
-        "sort": "cited_by_count:desc",
+        # sort by publication_year to get a representative spread, not just famous papers
+        "sort": "publication_year:desc",
         "per_page": 100,
     }
 
@@ -52,7 +52,6 @@ def fetch_works_for_institution(inst_id, concept_id, year_start, year_end, max_w
 
 
 def fetch_all(use_cache=True):
-    # load from cache if available — saves time and api calls
     if use_cache and os.path.exists(CACHE_PATH):
         print("loading from cache...")
         with open(CACHE_PATH) as f:

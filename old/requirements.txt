@@ -1,8 +1,0 @@
-
-requests
-pandas
-networkx
-matplotlib
-pyvis
-pykeen
-torch

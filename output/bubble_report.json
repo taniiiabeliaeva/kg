@@ -1,20 +1,26 @@
 {
   "TU Wien": {
     "internal_citations": 162,
-    "external_citations": 41367,
-    "total_citations": 41529,
-    "bubble_score": 0.0039
+    "external_citations": 61,
+    "traced_citations": 223,
+    "total_outgoing": 41544,
+    "untraced_citations": 41321,
+    "bubble_score": 0.7265
   },
   "ETH Zurich": {
     "internal_citations": 161,
-    "external_citations": 39072,
-    "total_citations": 39233,
-    "bubble_score": 0.0041
+    "external_citations": 65,
+    "traced_citations": 226,
+    "total_outgoing": 39247,
+    "untraced_citations": 39021,
+    "bubble_score": 0.7124
   },
   "TU Berlin": {
     "internal_citations": 346,
-    "external_citations": 46255,
-    "total_citations": 46601,
-    "bubble_score": 0.0074
+    "external_citations": 52,
+    "traced_citations": 398,
+    "total_outgoing": 46614,
+    "untraced_citations": 46216,
+    "bubble_score": 0.8693
   }
 }
