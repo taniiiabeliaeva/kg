@@ -1,6 +1,3 @@
-# config.py — loads all settings from .env
-# import this in every script instead of hardcoding values
-
 import os
 from dotenv import load_dotenv
 
@@ -24,8 +21,7 @@ INSTITUTIONS = {
 # filter by field — "computer science" concept id
 FIELD_CONCEPT_ID = "C41008148"
 
-YEAR_START = 2018
-YEAR_END   = 2023
+YEAR_START = 2015
+YEAR_END   = 2025
 
-# keep small at first, increase once pipeline works
-MAX_WORKS_PER_INSTITUTION = 500
+MAX_WORKS_PER_INSTITUTION = 1000

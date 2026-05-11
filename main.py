@@ -1,6 +1,3 @@
-# main.py — runs the full pipeline in order
-# you can comment out steps you've already done
-
 from src.fetch import fetch_all
 from src.graph import build_graph
 from src.bubbles import compute_bubble_scores, compute_temporal_scores
@@ -20,5 +17,3 @@ if __name__ == "__main__":
 
     # step 4 — export triples for kge training
     export_triples()
-
-    print("\ndone — next run: python models/kge_training.py")
