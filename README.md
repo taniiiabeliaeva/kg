@@ -6,8 +6,7 @@ This project detects research bubbles in academic knowledge graphs by combining 
 
 ```
 research_bubbles/
-├── .env                       ← your keys (never commit this)
-├── .env.example               ← template — safe to commit
+├── .env                      
 ├── .gitignore
 ├── requirements.txt
 ├── main.py                    ← runs the full pipeline
@@ -39,21 +38,11 @@ research_bubbles/
 
 ### Step 1 — Create virtual environment (Mac)
 
-```bash
-cd path/to/research_bubbles
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-`(.venv)` should appear in your terminal prompt. You need to run this activation command every time you open a new terminal.
-
 ### Step 2 — Install dependencies
 
 ```bash
 pip install -r requirements.txt
-```
-
-`torch` and `sentence-transformers` are large — takes a few minutes, that's normal.
+```.
 
 ### Step 3 — Set up your .env file
 
@@ -63,18 +52,9 @@ cp .env.example .env
 
 Open `.env` and fill in:
 - `OPENALEX_API_KEY` — free key at https://openalex.org/settings/api
-- `NEO4J_PASSWORD` — the password you set when creating the Neo4j database (step 4)
+- `NEO4J_PASSWORD` — the password you set when creating the Neo4j database
 
 ### Step 4 — Install and start Neo4j
-
-1. Download **Neo4j Desktop** from https://neo4j.com/download/
-2. Create a new project → Add → Local DBMS
-3. Set a password (same one as in `.env`)
-4. Click **Start**
-
-The default connection `bolt://localhost:7687` works as-is.
-
----
 
 ## Running the project
 
