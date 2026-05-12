@@ -42,7 +42,8 @@ research_bubbles/
 
 ```bash
 pip install -r requirements.txt
-```.
+```
+
 ### Step 3 — Set up your .env file
 
 Open `.env` and fill in:
