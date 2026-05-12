@@ -10,7 +10,7 @@ research_bubbles/
 ├── .gitignore
 ├── requirements.txt
 ├── main.py                    ← runs the full pipeline
-├── explore.py                 ← start here to look at the api
+├── explore.ipynb              ← api exploration check
 ├── data/
 │   └── works_cache.json       ← auto-generated after first fetch
 ├── src/
