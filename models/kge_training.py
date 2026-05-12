@@ -1,3 +1,5 @@
+#  TransE and ComplEx, trained on affiliated papers only that gives a much smaller entity space (~4500 vs 183k) and meaningful hits@10
+
 import argparse
 import pandas as pd
 import torch
@@ -7,23 +9,36 @@ from pathlib import Path
 
 TRIPLES_PATH  = "output/triples.tsv"
 OUTPUT_DIR    = "output/kge"
-EPOCHS        = 200
+EPOCHS        = 300
 EMBEDDING_DIM = 64
 LEARNING_RATE = 0.005
-BATCH_SIZE    = 256
+BATCH_SIZE    = 128
 MARGIN        = 1.0
 TRAIN_RATIO   = 0.8
-NEG_SAMPLES   = 3
+NEG_SAMPLES   = 5
 
-
-# data 
 
 def load_triples(path=TRIPLES_PATH):
-    df = pd.read_csv(path, sep="\t")
-    print(f"{len(df)} triples loaded")
-    df = df[df["relation"] == "CITES"].copy()
-    print(f"{len(df)} citation triples after filtering")
-    return df
+    full_df = pd.read_csv(path, sep="\t")
+    print(f"{len(full_df)} total triples loaded")
+
+    # only keep papers that have a known institution affiliation
+    # these are the ~4500 papers we actually fetched, not reference stubs
+    affiliated_papers = set(
+        full_df[full_df["relation"] == "AFFILIATED_WITH"]["head"].unique()
+    )
+    print(f"{len(affiliated_papers)} affiliated papers in dataset")
+
+    # filter citation triples to only include affiliated papers on both ends
+    cites = full_df[full_df["relation"] == "CITES"].copy()
+    cites_filtered = cites[
+        cites["head"].isin(affiliated_papers) &
+        cites["tail"].isin(affiliated_papers)
+    ].copy()
+
+    print(f"{len(cites_filtered)} citation triples between affiliated papers")
+    print(f"(vs {len(cites)} total citation triples before filtering)")
+    return cites_filtered, affiliated_papers
 
 
 def build_vocab(df):
@@ -41,12 +56,11 @@ def encode(df, entity2id, relation2id):
     return h, r, t
 
 
-# models 
-
 class TransE(nn.Module):
     """
     TransE: score(h,r,t) = ||h + r - t||
-    works well for simple hierarchical / directional relations like citations
+    simple, works well for directional relations
+    struggles with asymmetric ones like citations
     """
     def __init__(self, n_ent, n_rel, dim):
         super().__init__()
@@ -64,14 +78,12 @@ class TransE(nn.Module):
 
 class ComplEx(nn.Module):
     """
-    ComplEx: uses complex-valued embeddings (real + imaginary parts)
-    better than TransE for asymmetric relations — useful here since
-    citation is asymmetric (A cites B does not mean B cites A)
-    score(h,r,t) = Re(<h, r, conj(t)>)
+    ComplEx: complex-valued embeddings
+    score = Re(<h, r, conj(t)>)
+    handles asymmetric relations better — citation is asymmetric
     """
     def __init__(self, n_ent, n_rel, dim):
         super().__init__()
-        # each embedding split into real and imaginary halves
         self.ent_re = nn.Embedding(n_ent, dim)
         self.ent_im = nn.Embedding(n_ent, dim)
         self.rel_re = nn.Embedding(n_rel, dim)
@@ -85,24 +97,20 @@ class ComplEx(nn.Module):
         h_re, h_im = self.ent_re(h), self.ent_im(h)
         r_re, r_im = self.rel_re(r), self.rel_im(r)
         t_re, t_im = self.ent_re(t), self.ent_im(t)
-        # Re(<h, r, conj(t)>) — lower magnitude = less plausible, so negate for consistency
         score = (
             (h_re * r_re * t_re).sum(dim=1)
             + (h_im * r_im * t_re).sum(dim=1)
             + (h_re * r_im * t_im).sum(dim=1)
             - (h_im * r_re * t_im).sum(dim=1)
         )
-        return -score  # negate so lower = more plausible, consistent with TransE
+        return -score  # negate: lower = more plausible, consistent with TransE
 
 
 MODELS = {"TransE": TransE, "ComplEx": ComplEx}
 
 
-#training
-def train(df, model_name):
-    if model_name not in MODELS:
-        raise ValueError(f"unknown model '{model_name}' — choose from {list(MODELS.keys())}")
 
+def train(df, model_name):
     entity2id, relation2id = build_vocab(df)
     n_ent = len(entity2id)
     n_rel = len(relation2id)
@@ -147,12 +155,12 @@ def train(df, model_name):
             optimizer.step()
             total_loss += loss.item()
 
-        if epoch % 40 == 0:
+        if epoch % 50 == 0:
             print(f"  epoch {epoch:3d} / {EPOCHS}  loss: {total_loss:.4f}")
 
-    # eval
+    # eval — full eval is now feasible since entity space is small
     model.eval()
-    sample = min(300, len(h_te))
+    sample = min(500, len(h_te))
     hits1, hits10, mrr = 0, 0, 0.0
     with torch.no_grad():
         for i in range(sample):
@@ -163,13 +171,12 @@ def train(df, model_name):
             if rank <= 10: hits10 += 1
             mrr += 1.0 / rank
 
-    print(f"\nresults on sample of {sample} test triples:")
+    print(f"\nresults on {sample} test triples:")
     print(f"  hits@1:  {hits1/sample:.4f}")
     print(f"  hits@10: {hits10/sample:.4f}")
     print(f"  MRR:     {mrr/sample:.4f}")
-    print(f"  (random baseline hits@10 ≈ {10/n_ent:.5f})")
+    print(f"  (random baseline hits@10 ≈ {10/n_ent:.5f}  —  {(hits10/sample)/(10/n_ent):.1f}x better)")
 
-    # save
     out = Path(OUTPUT_DIR) / model_name
     out.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), out / "model.pt")
@@ -187,7 +194,10 @@ def train(df, model_name):
 def predict_links(model, entity2id, relation2id, head_id, relation="CITES", top_k=10):
     id2entity = {v: k for k, v in entity2id.items()}
     if head_id not in entity2id:
-        print(f"{head_id} not found in vocabulary")
+        print(f"{head_id} not in vocabulary — it may be a stub paper not in affiliated set")
+        # suggest a valid id
+        sample_ids = list(entity2id.keys())[:3]
+        print(f"try one of these instead: {sample_ids}")
         return
     h = torch.tensor([entity2id[head_id]])
     r = torch.tensor([relation2id[relation]])
@@ -205,11 +215,10 @@ def predict_links(model, entity2id, relation2id, head_id, relation="CITES", top_
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="TransE", choices=list(MODELS.keys()),
-                        help="KGE model to train (default: TransE)")
+    parser.add_argument("--model", default="TransE", choices=list(MODELS.keys()))
     args = parser.parse_args()
 
-    df = load_triples()
+    df, affiliated_papers = load_triples()
     model, entity2id, relation2id = train(df, args.model)
 
     # to test link prediction, uncomment and replace with a real paper id:
