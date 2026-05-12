@@ -19,7 +19,7 @@ INSTITUTIONS = {
 # filter by field — "computer science" concept id
 FIELD_CONCEPT_ID = "C41008148"
 
-YEAR_START = 2015
+YEAR_START = 2018
 YEAR_END   = 2025
 
 MAX_WORKS_PER_INSTITUTION = 1000
