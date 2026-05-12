@@ -1,4 +1,3 @@
-# models/kge_training.py — TransE and ComplEx using plain torch
 import argparse
 import pandas as pd
 import torch

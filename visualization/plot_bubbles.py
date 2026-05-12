@@ -1,5 +1,3 @@
-# visualization/plot_bubbles.py — charts for bubble scores
-
 import pandas as pd
 import json
 import matplotlib.pyplot as plt

@@ -1,5 +1,4 @@
-# bubbles.py — logic-based bubble detection
-#
+# logic-based bubble detection
 # datalog-style rules (revised):
 #   known_paper(P)               :- affiliated_with(P, _)   -- paper is in our dataset
 #   internal_citation(P1, P2, I) :- cites(P1, P2), affiliated_with(P1, I), affiliated_with(P2, I)
@@ -7,7 +6,7 @@
 #   bubble_score(I)              :- count(internal) / count(traced)
 #
 # key difference from naive approach:
-#   - we only count citations where the cited paper is also in our dataset (known_paper)
+#   - i only count citations where the cited paper is also in our dataset (known_paper)
 #   - this avoids drowning the score with thousands of stub references to unknown papers
 #   - result: "of citations we can trace, what fraction stay within the same institution?"
 

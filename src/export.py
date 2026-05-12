@@ -1,4 +1,4 @@
-# export.py — exports the kg as triples for kge training
+# exports the kg as triples for kge training
 # output format: (head, relation, tail) — works with pykeen, ampligraph, etc.
 
 import pandas as pd

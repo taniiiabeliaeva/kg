@@ -1,4 +1,4 @@
-# fetch.py — pulls papers, authors, concepts from openalex and caches locally
+# pulls papers, authors, concepts from openalex and caches locally
 
 import requests
 import json

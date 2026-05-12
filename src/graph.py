@@ -1,4 +1,4 @@
-# graph.py — builds the knowledge graph in neo4j
+# builds the knowledge graph in neo4j
 # nodes: Paper, Author, Institution, Concept
 # edges: CITES, AUTHORED_BY, AFFILIATED_WITH, HAS_CONCEPT
 
@@ -11,14 +11,14 @@ def get_driver():
 
 
 def clear_graph(driver):
-    # wipe everything — useful when re-running
+    # wipe everything 
     with driver.session() as s:
         s.run("MATCH (n) DETACH DELETE n")
     print("graph cleared")
 
 
 def create_constraints(driver):
-    # uniqueness constraints — speeds up merges a lot
+    # uniqueness constraints, speeds up merges a lot
     with driver.session() as s:
         s.run("CREATE CONSTRAINT IF NOT EXISTS FOR (p:Paper) REQUIRE p.id IS UNIQUE")
         s.run("CREATE CONSTRAINT IF NOT EXISTS FOR (a:Author) REQUIRE a.id IS UNIQUE")
@@ -27,7 +27,7 @@ def create_constraints(driver):
 
 
 def _short_id(url):
-    # openalex ids are full urls — just keep the last part e.g. W2345678
+    # openalex ids are full urls, so just keep the last part e.g. W2345678
     return url.split("/")[-1]
 
 

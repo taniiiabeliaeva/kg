@@ -36,19 +36,14 @@ research_bubbles/
 
 ## Setup
 
-### Step 1 — Create virtual environment (Mac)
+### Step 1 — Create virtual environment
 
 ### Step 2 — Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```.
-
 ### Step 3 — Set up your .env file
-
-```bash
-cp .env.example .env
-```
 
 Open `.env` and fill in:
 - `OPENALEX_API_KEY` — free key at https://openalex.org/settings/api
@@ -57,8 +52,6 @@ Open `.env` and fill in:
 ### Step 4 — Install and start Neo4j
 
 ## Running the project
-
-### Full pipeline
 
 ```bash
 python main.py
@@ -118,6 +111,6 @@ All settings are in `src/config.py`:
 
 | Setting | Default | Notes |
 |---|---|---|
-| `MAX_WORKS_PER_INSTITUTION` | 500 | increase for more data, slower fetch |
+| `MAX_WORKS_PER_INSTITUTION` | 1000 | increase for more data, slower fetch |
 | `FIELD_CONCEPT_ID` | C41008148 (CS) | find other IDs at openalex.org/concepts |
 | `YEAR_START / YEAR_END` | 2015–2025 | adjust time window |
