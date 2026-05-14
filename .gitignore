@@ -9,3 +9,5 @@ output/kge/
 *.html
 old/
 .DS_Store
+data/
+data/works_cache.json
